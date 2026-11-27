@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ninja game</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      image-rendering: pixelated;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" width="960" height="720"></canvas>
+  <script type="module">
+    import { loadPyodide } from 'https://cdn.jsdelivr.net/pyodide/v314.0.3/full/pyodide.mjs'
+
+    const canvas = document.getElementById('canvas')
+
+    const pyodide = await loadPyodide()
+    await pyodide.loadPackage('micropip')
+    const micropip = pyodide.pyimport('micropip')
+    await micropip.install(['pgweb==0.9.1', 'moderngl==6.0.0b3'])
+
+    const gameZip = await fetch('game.zip')
+    pyodide.unpackArchive(await gameZip.arrayBuffer(), 'zip')
+
+    const pgweb = pyodide.pyimport('pgweb')
+    eval(pgweb._extern_js)(pyodide, canvas)
+
+    const gl = canvas.getContext('webgl2', { alpha: true, depth: false, stencil: false, antialias: false })
+    const moderngl = pyodide.pyimport('moderngl')
+    pyodide._module.mergeLibSymbols(eval(moderngl._extern_gl)(pyodide._module, gl))
+
+    pyodide.runPython(pyodide.FS.readFile('main.py', { encoding: 'utf8' }))
+    const game = pyodide.globals.get('game')
+
+    const STEP_MS = 1000 / 60
+    const MAX_STEPS = 4
+    let lastTime = performance.now()
+    let pendingTime = 0
+
+    const loop = (time) => {
+      pendingTime += Math.max(time - lastTime, 0)
+      pendingTime = Math.min(pendingTime, STEP_MS * MAX_STEPS)
+      lastTime = time
+      while (pendingTime >= STEP_MS) {
+        game.frame()
+        pendingTime -= STEP_MS
+      }
+      game.draw()
+      requestAnimationFrame(loop)
+    }
+
+    requestAnimationFrame(loop)
+  </script>
+</body>
+</html>
